@@ -62,7 +62,7 @@ int dismb_find_func(MBDisasm* pDis, const char* pName) {
 	return idx;
 }
 
-static void instr(uint32_t addr, uint32_t code) {
+static void instr(uint32_t addr, uint32_t code, MBInstrCB cb, void* pWkMem) {
 	const char* pOpName = "";
 	int opr3 = 1;
 	uint32_t op = (code >> 26) & 0x3F;
@@ -480,21 +480,26 @@ static void instr(uint32_t addr, uint32_t code) {
 		pOpName = "xori";
 		rB = -1;
 	}
-	printf("%08X: %08X   %s\t", addr, code, pOpName);
-	if (rD >= 0) {
-		printf("r%d, ", rD);
-	}
-	if (rA >= 0) {
-		printf("r%d%s", rA, opr3 ? ", " : "");
-	}
-	if (opr3) {
-		if (rB >= 0) {
-			printf("r%d", rB);
-		} else {
-			printf("%d", imm);
+
+	if (cb) {
+		cb(pWkMem, addr, code, pOpName, rD, rA, rB, imm);
+	} else {
+		printf("%08X: %08X   %s\t", addr, code, pOpName);
+		if (rD >= 0) {
+			printf("r%d, ", rD);
 		}
+		if (rA >= 0) {
+			printf("r%d%s", rA, opr3 ? ", " : "");
+		}
+		if (opr3) {
+			if (rB >= 0) {
+				printf("r%d", rB);
+			} else {
+				printf("%d", imm);
+			}
+		}
+		printf("\n");
 	}
-	printf("\n");
 }
 
 void dismb_func(MBDisasm* pDis, int ifunc) {
@@ -515,8 +520,25 @@ void dismb_func(MBDisasm* pDis, int ifunc) {
 	printf("function \"%s\": addr=0x%X, offs=0x%X, #instrs=%d\n", pDis->pFuncs[ifunc].pName, addr, offs, ninstrs);
 	for (i = 0; i < ninstrs; ++i) {
 		uint32_t code = elfi32_read_u32(pDis->pELF, offs);
-		instr(addr, code);
+		instr(addr, code, NULL, NULL);
 		offs += 4;
 		addr += 4;
 	}
+}
+
+void dismb_instr(MBDisasm* pDis, uint32_t addr, MBInstrCB cb, void* pWkMem) {
+	uint32_t offs;
+	uint32_t code;
+	if (!pDis) {
+		return;
+	}
+	if (addr < pDis->textAddr) {
+		return;
+	}
+	if (addr >= pDis->textAddr + pDis->textSize) {
+		return;
+	}
+	offs = pDis->textOffs + (addr - pDis->textAddr);
+	code = elfi32_read_u32(pDis->pELF, offs);
+	instr(addr, code, cb, pWkMem);
 }
